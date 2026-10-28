@@ -1,321 +1,187 @@
-# libvips: an image processing library
+# libvips（Zig 构建 / Zig 依赖）
 
-[![CI](https://github.com/libvips/libvips/workflows/CI/badge.svg)](https://github.com/libvips/libvips/actions)
-[![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/libvips.svg)](https://issues.oss-fuzz.com/issues?q=is:open%20project:libvips)
-[![Coverity Status](https://scan.coverity.com/projects/6503/badge.svg)](https://scan.coverity.com/projects/jcupitt-libvips)
-[![Gitter](https://badges.gitter.im/libvips/devchat.svg)](https://gitter.im/libvips/devchat?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+本项目把 [libvips/libvips](https://github.com/libvips/libvips) 打包成一个可由其它
+Zig 项目直接依赖的构建过程与编译产物。
 
-# Introduction
+**目的**：让其它 Zig 项目把 libvips 当作一个普通的 Zig 依赖引入（通过 `build.zig.zon`），
+**无需把 libvips 源码复制进自己的工程**。本依赖负责：
 
-libvips is a [demand-driven, horizontally
-threaded](https://github.com/libvips/libvips/wiki/Why-is-libvips-quick)
-image processing library. Compared to similar
-libraries, [libvips runs quickly and uses little
-memory](https://github.com/libvips/libvips/wiki/Speed-and-memory-use).
-libvips is licensed under the [LGPL-2.1-or-later](
-https://spdx.org/licenses/LGPL-2.1-or-later).
+- 把 libvips 编译成静态库（默认 `libvips.a`，可选 `libvips.so`）；
+- 提供 libvips 的公共头文件目录（含生成好的 `version.h`、`enumtypes.h`）；
+- 通过 `pkg-config` 发现并链接系统依赖，并把它们的 include / link 参数传递给集成方；
+- 提供 `vips` 模块：`translate-c` 生成的 C API 绑定，同时携带全部 include / link 参数。
 
-It has around [300
-operations](https://www.libvips.org/API/current/function-list.html)
-covering arithmetic, histograms, convolution, morphological
-operations, frequency filtering, colour, resampling,
-statistics and others. It supports a large range of [numeric
-types](https://www.libvips.org/API/current/enum.BandFormat.html),
-from 8-bit int to 128-bit complex. Images can have any number of bands.
-It supports a good range of image formats, including JPEG, JPEG 2000, JPEG XL,
-TIFF, PNG, WebP, HEIC, AVIF, FITS, Matlab, OpenEXR, PDF, SVG, HDR, PPM / PGM /
-PFM, CSV, GIF, Analyze, NIfTI, DeepZoom, and OpenSlide. It can also load
-images via ImageMagick or GraphicsMagick, letting it work with formats
-like DICOM.
+> [!WARNING]
+> **注意**：本项目主要是给 [Hentioe/jve](https://github.com/Hentioe/jve) 提供支持，除此之外的作用都不会成为首要目的。
 
-It comes with bindings for
-[C](https://www.libvips.org/API/current/using-from-c.html),
-[C++](https://www.libvips.org/API/current/using-from-cplusplus.html),
-and the
-[command-line](https://www.libvips.org/API/current/using-the-cli.html).
-Full bindings are available for:
+## 外部集成
 
-| Language | Binding |
-|---|---|
-| Ruby | [ruby-vips](https://rubygems.org/gems/ruby-vips) |
-| Python | [pyvips](https://pypi.python.org/pypi/pyvips) |
-| PHP | [php-vips](https://github.com/libvips/php-vips) |
-| C# / .NET | [NetVips](https://www.nuget.org/packages/NetVips) |
-| Go | [vips-gen](https://github.com/cshum/vipsgen) |
-| Lua | [lua-vips](https://github.com/libvips/lua-vips) |
-| Crystal | [crystal-vips](https://github.com/naqvis/crystal-vips) |
-| Elixir | [vix](https://github.com/akash-akya/vix) |
-| Java | [vips-ffm](https://github.com/lopcode/vips-ffm) |
-| Nim | [libvips-nim](https://github.com/openpeeps/libvips-nim) |
+本依赖不提供额外的 Zig 封装 API：唯一的公开模块 `vips` 是 libvips C API 的机械
+翻译（`translate-c`），语义与 C 版完全一致；它同时携带所有头文件路径与链接参数，
+因此集成方只需 import 这一个模块。
 
-libvips is used as an image processing engine by:
+### 1. 在 `build.zig.zon` 添加依赖
 
-| |
-|---|
-| [Mastodon](https://github.com/mastodon/mastodon) |
-| [sharp (on Node.js)](https://www.npmjs.org/package/sharp) |
-| [imgproxy](https://github.com/imgproxy/imgproxy) |
-| [wsrv.nl](https://github.com/weserv/images) |
-| [bimg](https://github.com/h2non/bimg) |
-| [Ruby on Rails](https://edgeguides.rubyonrails.org/active_storage_overview.html) |
-| [CarrierWave](https://github.com/carrierwaveuploader/carrierwave#using-vips) |
-| [MediaWiki](https://www.mediawiki.org/wiki/Extension:Thumbro) |
-
-and others. The official libvips GUI is
-[nip2](https://github.com/libvips/nip2), a strange combination of a
-spreadsheet and a photo editor.
-
-# Install
-
-There are packages for most Unix-like operating systems, including
-macOS. Check your package manager.
-
-There are binaries for Windows in
-[releases](https://github.com/libvips/libvips/releases).
-
-The [libvips website](https://www.libvips.org) has [detailed
-install notes](https://www.libvips.org/install.html).
-
-# Building from source
-
-libvips uses the [Meson build system](https://mesonbuild.com), version 0.56
-or later. Meson can use [`ninja`](https://ninja-build.org), Visual Studio or
-XCode as a backend, so you'll also need one of them.
-
-libvips must have `build-essential`, `pkg-config`, `libglib2.0-dev`,
-`libexpat1-dev`.  See the **Dependencies** section below for a full list
-of the libvips optional dependencies.
-
-There are basic bash completions in `completions/`, see the README in there.
-
-## Cheatsheet
-
-```
-cd libvips-x.y.x
-meson setup build --prefix /my/install/prefix
-cd build
-meson compile
-meson test
-meson install
+```sh
+zig fetch --save git+https://github.com/Hentioe/jve-libvips
 ```
 
-Check the output of `meson setup` carefully and make sure it found everything
-you wanted it to find.  Add arguments to `meson setup` to change the build
-configuration.
+### 2. 在 `build.zig` 中接入
 
-- Add flags like `-Dnsgif=false` to turn libvips options on and off, see
-  `meson_options.txt` for a list of all the build options libvips supports.
+```zig
+const std = @import("std");
 
-- Add flags like `-Dmagick=disabled` to turn libvips dependencies on and off,
-  see `meson_options.txt` and the list below for a summary of all the libvips
-  dependencies.
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-- You might need to add `--libdir lib` on Debian if you don't want the arch
-  name in the library path.
+    const vips_dep = b.dependency("libvips", .{
+        .target = target,
+        .optimize = optimize,
+        // 可选：关闭不需要的依赖，例如：
+        // .heif = false,
+        // .jxl = false,
+        // .magick = false,
+    });
 
-- Add `--default-library static` for a static build.
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
 
-- Use e.g. `CC=clang CXX=clang++ meson setup ...` to change compiler.
+    // 关键：`vips` 模块同时提供 C API 绑定、include 路径和系统库链接参数。
+    exe_mod.addImport("vips", vips_dep.module("vips"));
+    // 链接 libvips 库本身。
+    exe_mod.linkLibrary(vips_dep.artifact("vips"));
 
-- You can have an alternative build directory, pick whatever names you like,
-  for example one for release and one for debug.
-
-There's a more comprehensive test suite you can run once libvips has been
-installed. Use `pytest` in the libvips base directory.
-
-## Optional dependencies
-
-If suitable versions are found, libvips will add support for the following
-libraries automatically. Packages are generally found with `pkg-config`,
-so make sure that is working.
-
-### libjpeg
-
-Anything that is compatible with the IJG JPEG library. Use `mozjpeg` if you
-can. Another option is `libjpeg-turbo`.
-
-### libultrahdr (libuhdr)
-
-If present, libvips will load UltraHDR images with Google's libultrahdr
-library. The `pkg-config` name is libuhdr.
-
-### libexif
-
-If available, libvips adds support for EXIF metadata in JPEG files.
-
-### librsvg
-
-The usual SVG loader. If this is not present, vips will try to load SVGs
-via imagemagick instead.
-
-### libraw
-
-The usual camera RAW loader. If this is not present, vips will try to load raw
-camera images via imagemagick instead.
-
-### PDFium
-
-If present, libvips will attempt to load PDFs with PDFium. Download the
-prebuilt pdfium binary from:
-
-https://github.com/bblanchon/pdfium-binaries/releases/latest
-
-Untar to the libvips install prefix, for example:
-
-```
-cd ~/vips
-tar xf ~/pdfium-linux.tgz
+    const exe = b.addExecutable(.{ .name = "my_project", .root_module = exe_mod });
+    b.installArtifact(exe);
+}
 ```
 
-Create a `pdfium.pc` like this (update the version number):
+### 3. 调用 libvips
 
-```
-VIPSHOME=$HOME/vips
-mkdir -p $VIPSHOME/lib/pkgconfig
-cat > $VIPSHOME/lib/pkgconfig/pdfium.pc << EOF
-prefix=$VIPSHOME
-exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
-includedir=\${prefix}/include
+使用 `vips` 模块：
 
-Name: pdfium
-Description: PDFium
-Version: 4290
-Libs: -L\${libdir} -lpdfium
-Cflags: -I\${includedir}
-EOF
-```
+```zig
+const c = @import("vips");
 
-If PDFium is not detected, libvips will look for `poppler-glib` instead.
+pub fn main() !void {
+    if (c.vips_init("my_project") != 0)
+        return error.VipsInit;
+    defer c.vips_shutdown();
 
-### poppler-glib
-
-The Poppler PDF renderer, with a glib API. If this is not present, vips
-will try to load PDFs via imagemagick.
-
-### cgif
-
-If available, libvips will save GIFs with
-[cgif](https://github.com/dloebl/cgif). If this is not present, vips will
-try to save gifs via imagemagick instead.
-
-### libarchive
-
-If available, libvips adds support for creating image pyramids with `dzsave`.
-
-### libtiff
-
-The TIFF library. It needs to be built with support for JPEG and
-ZIP compression. 3.4b037 and later are known to be OK.
-
-### fftw3
-
-If libvips finds this library, it uses it for fourier transforms.
-
-### lcms2
-
-If present, `vips_icc_import()`, `vips_icc_export()` and `vips_icc_transform()`
-can be used to manipulate images with ICC profiles.
-
-### libpng
-
-If present, libvips will load and save PNG files using libpng. If not, it
-will look for the spng package.
-
-### libimagequant, quantizr
-
-If one of these quantisation packages is present, libvips can write 8-bit
-palette-ised PNGs and GIFs.
-
-### ImageMagick, or optionally GraphicsMagick
-
-If available, libvips adds support for loading and saving all
-libMagick-supported image file types. You can enable and disable load and save
-separately.
-
-Imagemagick 6.9+ needs to have been built with `--with-modules`. Most packaged
-IMs are, I think.
-
-If you are going to be using libvips with untrusted images, perhaps in a
-web server, for example, you should consider the security implications of
-enabling a package with such a large attack surface.
-
-### pangocairo
-
-If available, libvips adds support for text rendering. You need the
-package pangocairo in `pkg-config --list-all`.
-
-### highway
-
-If present, libvips will accelerate some operations with SIMD. If not, it
-will look for the orc-0.4 package.
-
-### matio
-
-If available, vips can load images from Matlab save files.
-
-### cfitsio
-
-If available, vips can load FITS images.
-
-### libwebp
-
-If available, vips can load and save WebP images.
-
-### libniftiio
-
-If available, vips can load and save NIfTI images.
-
-### OpenEXR
-
-If available, libvips will directly read (but not write, sadly)
-OpenEXR images.
-
-### OpenJPEG
-
-If available, libvips will read and write JPEG2000 images.
-
-### libjxl
-
-If available, libvips will read and write JPEG-XL images.
-
-### OpenSlide
-
-If available, libvips can load OpenSlide-supported virtual slide
-files: Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana.
-
-### libheif
-
-If available, libvips can load and save HEIC and AVIF images. Your libheif (in
-turn) needs to be built with the correct decoders and encoders. You can check
-with eg.:
-
-```console
-$ heif-convert --list-decoders
-HEIC decoders:
-- libde265 = libde265 HEVC decoder, version 1.0.9
-AVIF decoders:
-- dav1d = dav1d v6.6.0
-- aom = AOMedia Project AV1 Decoder v3.5.0
-$ heif-enc --list-encoders
-HEIC encoders:
-- x265 = x265 HEVC encoder (3.5+1-f0c1022b6) [default]
-AVIF encoders:
-- aom = AOMedia Project AV1 Encoder v3.5.0 [default]
-- svt = SVT-AV1 encoder v1.1.0
-- rav1e = Rav1e encoder
+    var image: ?*c.VipsImage = null;
+    if (c.vips_black(&image, 64, 64, @as(?*anyopaque, null)) != 0)
+        return error.VipsBlack;
+    defer _ = c.g_object_unref(@ptrCast(image.?));
+}
 ```
 
-# Contributors
+如果不想用自动生成的绑定，也可以在 `build.zig` 里自行 `b.addTranslateC` 一个聚合头
+（`#include <vips/vips.h>`），或直接声明 `extern` 函数；注意自行 `addTranslateC`
+时需要把依赖的 include 路径也加上（这些路径同样可以通过 `vips` 模块获得）。
 
-### Code Contributors
+### 4. 非 Zig 构建系统
 
-This project exists thanks to all the people who contribute.
+先在本仓库构建，再使用安装产物：
 
-<a href="https://github.com/libvips/libvips/graphs/contributors"><img src="https://opencollective.com/libvips/contributors.svg?width=890&button=false" /></a>
+```sh
+nix-shell --run 'zig build'
+```
 
-### Organizations
+- 库：`zig-out/lib/libvips.a`
+- 头文件：`zig-out/include/vips/`（已包含生成的 `version.h`、`enumtypes.h`）
 
-We've had generous financial support from our sponsors. Thank you very much!
+静态链接时还需要系统依赖库，可用 `pkg-config` 获取，例如：
 
-<img src="https://opencollective.com/libvips/sponsors.svg?width=890&button=false" />
+```sh
+pkg-config --cflags --libs glib-2.0 gio-2.0 gobject-2.0 gmodule-no-export-2.0 \
+    expat zlib libjpeg libpng libwebp libwebpmux libwebpdemux libtiff-4 \
+    libheif libjxl libjxl_threads lcms2 libexif imagequant cgif \
+    pangocairo pangoft2 fontconfig MagickWand
+```
+
+## 构建本仓库
+
+```sh
+nix-shell --run 'zig build'
+```
+
+`shell.nix` 提供了 Zig 与全部系统依赖；不进入 `nix-shell` 时，需要自行保证
+`pkg-config` 能找到这些库。
+
+构建完成后可以运行链接自检，确认静态库的系统依赖完整（尤其是 expat）：
+
+```sh
+nix-shell --run 'zig build check'
+```
+
+### 选项
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-Dshared` | `false` | 构建动态库 `libvips.so` |
+| `-Ddeprecated` | `false` | 编译 vips7 兼容 API |
+| `-Dmagick` | 自动 | ImageMagick 支持（`.bmp` 等格式依赖它） |
+| `-D<依赖名>` | `true` | 各系统依赖开关，见下（`fftw`、`archive` 默认 `false`） |
+| `-Dextra-cflags` | 空 | 追加编译参数，如 `-I/opt/foo/include` |
+| `-Dextra-libs` | 空 | 追加链接参数，如 `-L/opt/foo/lib -lfoo` |
+
+可用依赖开关：`glib`、`expat`、`zlib`、`jpeg`、`png`、`spng`、`webp`、`tiff`、
+`heif`、`jxl`、`lcms`、`exif`、`imagequant`、`cgif`、`fftw`、`archive`、
+`pangocairo`、`fontconfig`、`magick`。
+
+`glib` 与 `expat` 是必需项（缺失会直接配置失败，避免产出带未定义符号的静态库），
+其余依赖缺失时会自动关闭并给出警告。`spng` 仅在 `libpng` 不存在时启用（避免与
+`png` 加载器重复定义类型）。
+
+## 格式与提供库
+
+必要格式：
+
+| 格式 | 提供者 | 构建选项 / 宏 |
+| --- | --- | --- |
+| `.hdr` | libvips 自带 Radiance 读写 | 始终开启（`HAVE_RADIANCE`） |
+| `.gif` 读取 | 仓库内置 libnsgif | 始终开启（`HAVE_NSGIF`） |
+| `.gif` 写入 | cgif + libimagequant | `cgif`、`imagequant` |
+| `.png` | libpng；没有 libpng 时回退 libspng | `png`（`spng` 仅回退） |
+| `.jpg` `.jpeg` `.jpe` `.jfif` | libjpeg（libjpeg-turbo） | `jpeg` |
+| `.webp` | libwebp + libwebpmux + libwebpdemux | `webp` |
+| `.tif` `.tiff` | libtiff | `tiff` |
+| `.jxl` | libjxl + libjxl_threads | `jxl` |
+| `.heic` `.heif` `.avif` | libheif | `heif` |
+| `.bmp` | ImageMagick（libvips 没有原生 BMP 读写） | `magick` |
+
+过时格式：
+
+| 格式 | 提供者 | 构建选项 / 宏 |
+| --- | --- | --- |
+| `.pbm` `.pgm` `.ppm` `.pfm` `.pnm` | **libvips 自带**（`ppmload.c`/`ppmsave.c`），不需要外部库 | `ppm`（`HAVE_PPM`），默认关闭 |
+| `.j2k` `.jpt` `.j2c` `.jpc` `.jp2` | OpenJPEG（pkg-config `libopenjp2`） | `openjpeg`（`HAVE_LIBOPENJP2`），未接入 |
+
+注意：ImageMagick（`magick`，默认自动开启，用于 `.bmp`）也可能通过它自己的
+delegate 重新提供上述过时格式。要完全排除这些格式需要关闭 `magick`，但那样会同时
+失去 `.bmp`。
+
+## 说明与注意事项
+
+- **依赖由集成方提供，构建由本依赖完成**。libvips 自身及所有 C/C++ 源码都由 Zig
+  自带的 C/C++ 工具链编译，不要求安装 CMake、g++ 或 clang；但配置阶段需要
+  `pkg-config` 以及对应的系统库（含开发头文件）。
+- **不做交叉编译的依赖探测**。`pkg-config` 查的是构建主机上的库；目标平台与主机
+  不一致时，请自行通过 `-Dextra-cflags` / `-Dextra-libs` 或系统环境配置。
+- **生成文件已预先提交**。`zig/` 下的 `vips-enumtypes.c/.h`、`vipsmarshal.c/.h`
+  是用 GLib 的 `glib-mkenums` / `glib-genmarshal` 从本仓库自己的头文件生成的，
+  不是外部代码；预生成是为了让构建不依赖这两个工具。`config.h` 与
+  `vips/version.h` 仍由 `build.zig` 在配置阶段生成。
+- **模块既是 API 绑定也是链接入口**。`vips` 模块的 root source 是 translate-c 生成的
+  C API；`addImport("vips", ...)` 同时继承全部 include 路径与系统库链接参数，
+  `linkLibrary(artifact("vips"))` 负责库本身。
+- **静态库需要链接 C++ 运行时**。libvips 含少量 C++ 源码，`vips` 模块已设置
+  `link_libcpp = true`，集成方无需额外处理。
+- **首次构建需要从头编译整个 libvips**，耗时取决于机器与启用的格式数量；之后
+  Zig 会复用缓存。
+- **i18n 默认关闭**，避免额外的 gettext / libintl 依赖；这不影响图像处理功能。

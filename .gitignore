@@ -46,3 +46,10 @@ TAGS
 ### Distribution
 vips-*.tar.gz
 ### End of Distribution
+
+# Direnv
+.direnv/
+
+# Zig
+.zig-cache/
+zig-out/

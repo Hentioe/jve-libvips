@@ -1,0 +1,13 @@
+.{
+    .name = .libvips,
+    .version = "8.18.8",
+    .fingerprint = 0xf212d5cfdbde5ee9,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "libvips",
+        "zig",
+    },
+}
