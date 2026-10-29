@@ -163,6 +163,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
         .link_libcpp = true,
         .sanitize_c = .off,
+        .pic = if (shared) true else null,
     });
 
     lib_mod.addIncludePath(b.path("libvips/include"));

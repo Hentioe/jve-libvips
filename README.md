@@ -123,7 +123,7 @@ nix-shell --run 'zig build check'
 
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `-Dshared` | `false` | 构建动态库 `libvips.so` |
+| `-Dshared` | `false` | 构建动态库 `libvips.so`（带 soname 版本号） |
 | `-Ddeprecated` | `false` | 编译 vips7 兼容 API |
 | `-Dmagick` | 自动 | ImageMagick 支持（`.bmp` 等格式依赖它） |
 | `-D<依赖名>` | `true` | 各系统依赖开关，见下（`fftw`、`archive` 默认 `false`） |
@@ -137,6 +137,44 @@ nix-shell --run 'zig build check'
 `glib` 与 `expat` 是必需项（缺失会直接配置失败，避免产出带未定义符号的静态库），
 其余依赖缺失时会自动关闭并给出警告。`spng` 仅在 `libpng` 不存在时启用（避免与
 `png` 加载器重复定义类型）。
+
+### 动态库
+
+默认构建静态库。需要动态库时：
+
+```sh
+nix-shell --run 'zig build -Dshared'
+```
+
+产物为 `zig-out/lib/libvips.so`，以及带 soname 的 `libvips.so.42`、
+`libvips.so.42.20.8`；头文件安装位置不变。
+
+集成方在 `b.dependency` 中传 `.shared = true` 即可使用动态库：
+
+```zig
+const vips_dep = b.dependency("libvips", .{
+    .target = target,
+    .optimize = optimize,
+    .shared = true,
+});
+
+// 把依赖构建出的 libvips.so（含 soname 符号链接）安装到本项目的 zig-out/lib
+b.installArtifact(vips_dep.artifact("vips"));
+
+// 可选：让可执行文件从 zig-out/lib 加载
+exe.root_module.addRPathSpecial("$ORIGIN/../lib");
+```
+
+动态库由本依赖完整构建（包含全部操作与格式支持），集成侧只负责安装和链接，不需要
+像 slang 那样在集成侧再用 `b.addLibrary` 重建一遍。自己用 `addLibrary` 把静态
+`libvips.a` 包成 `.so` 也可以，但链接器只会拉入被引用到的对象，容易漏掉格式 loader；
+需要完整的 libvips 动态库时应直接使用 `-Dshared`。
+
+若确实要在集成侧创建自己的共享库（例如包一层 shim），需要注意纯 C 根模块要提供一个
+最小的 Zig 根文件，否则被 import 的翻译模块会因缺少 `@import("root")` 而编译失败。
+
+Zig 会自动把依赖产物的目录写进可执行文件的 rpath，开发时可以直接运行。发布时需要
+把 `libvips.so*` 一并安装到运行环境，或自行设置 `rpath` / `LD_LIBRARY_PATH`。
 
 ## 格式与提供库
 
