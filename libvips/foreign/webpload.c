@@ -113,13 +113,13 @@ vips_foreign_load_webp_build(VipsObject *object)
 static VipsForeignFlags
 vips_foreign_load_webp_get_flags(VipsForeignLoad *load)
 {
-	return 0;
+	return VIPS_FOREIGN_SEQUENTIAL;
 }
 
 static VipsForeignFlags
 vips_foreign_load_webp_get_flags_filename(const char *filename)
 {
-	return 0;
+	return VIPS_FOREIGN_SEQUENTIAL;
 }
 
 static int
